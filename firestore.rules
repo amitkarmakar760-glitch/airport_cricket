@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+
+  // ---------- helpers (each keeps the number of document lookups small) ----------
+  function signed() { return request.auth != null; }
+  function me(uid) { return signed() && request.auth.uid == uid; }
+  // An admin has a marker document admins/{uid}. It can only be created by someone
+  // who already holds one of the 3 seats in admin_slots (see below).
+  function admin() { return signed() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+  function holds(n) { return exists(/databases/$(database)/documents/admin_slots/$(n)) && get(/databases/$(database)/documents/admin_slots/$(n)).data.uid == request.auth.uid; }
+  // Pending players cannot use protected features. Admins are always treated as approved.
+  function approved() { return signed() && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('approvalStatus', 'approved') == 'approved' || admin()); }
+  function maxSlots() { return exists(/databases/$(database)/documents/app_settings/main) ? get(/databases/$(database)/documents/app_settings/main).data.get('maxSlots', 22) : 22; }
+  function booking(date, uid) { return exists(/databases/$(database)/documents/bookings/$(date + '_' + uid)); }
+  function oldCount() { return resource == null ? 0 : resource.data.count; }
+  // A counter may only move by exactly one step (up to the limit).
+  function validCount(limit) {
+   return request.resource.data.keys().hasOnly(['count']) && request.resource.data.count is int && request.resource.data.count >= 0
+    && ((request.resource.data.count == oldCount() + 1 && request.resource.data.count <= limit)
+     || request.resource.data.count == oldCount() - 1
+     || (oldCount() == 0 && request.resource.data.count == 0));
+  }
+
+  // ---------- players ----------
+  match /users/{uid} {
+   allow read: if signed();
+   allow create: if me(uid) && request.resource.data.id == uid && request.resource.data.isAdmin == false && request.resource.data.approvalStatus == 'pending' && request.resource.data.dateOfBirth is string && request.resource.data.name is string;
+   allow update: if (me(uid) && request.resource.data.id == uid && request.resource.data.isAdmin == resource.data.isAdmin && request.resource.data.get('approvalStatus', 'approved') == resource.data.get('approvalStatus', 'approved') && request.resource.data.dateOfBirth is string && request.resource.data.name is string)
+    || (admin() && resource.data.approvalStatus == 'pending' && request.resource.data.approvalStatus == 'approved' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedAt', 'approvedBy']) && request.resource.data.approvedBy == request.auth.uid);
+   // A player may delete their own profile. An admin may delete any player who is not an admin.
+   allow delete: if me(uid) || (admin() && !exists(/databases/$(database)/documents/admins/$(uid)));
+  }
+
+  // ---------- admin seats: max 3, one shared password, each admin uses their own name ----------
+  // Step 1: a player writes admin_enroll/{uid} with the password. Nobody can read it back.
+  match /admin_enroll/{uid} {
+   allow read: if false;
+   allow create, update: if me(uid) && request.resource.data.keys().hasOnly(['code', 'at']) && request.resource.data.code == '732101';
+   allow delete: if me(uid);
+  }
+  // Step 2: they claim a free seat (ids 1-3 only, so never more than 3 admins; one seat per person).
+  match /admin_slots/{slot} {
+   allow read: if signed();
+   allow create: if slot in ['1', '2', '3'] && me(request.resource.data.uid) && request.resource.data.keys().hasOnly(['uid', 'name']) && request.resource.data.name is string
+    && exists(/databases/$(database)/documents/admin_enroll/$(request.auth.uid)) && !holds('1') && !holds('2') && !holds('3');
+   // A seat is only released together with its admin marker (done when the admin deletes their profile).
+   allow delete: if signed() && resource.data.uid == request.auth.uid && !existsAfter(/databases/$(database)/documents/admins/$(request.auth.uid));
+   allow update: if false;
+  }
+  // Step 3: the admin marker, only for someone who holds a seat.
+  match /admins/{uid} {
+   allow read: if signed();
+   allow create: if me(uid) && (holds('1') || holds('2') || holds('3'));
+   allow delete: if me(uid);
+   allow update: if false;
+  }
+
+  // ---------- club content (admins only) ----------
+  match /app_settings/{id} { allow read: if signed(); allow write: if admin() && id == 'main'; }
+  match /notices/{id} { allow read: if signed(); allow write: if admin(); }
+  match /charity_posts/{id} { allow read: if signed(); allow write: if admin(); }
+
+  // ---------- bookings ----------
+  match /bookings/{id} {
+   allow read: if signed();
+   allow create: if approved() && id == request.resource.data.date + '_' + request.auth.uid && request.resource.data.userId == request.auth.uid && request.resource.data.name == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name && request.resource.data.role == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+   allow delete: if signed() && (resource.data.userId == request.auth.uid || admin());
+   allow update: if false;
+  }
+  match /booking_counts/{date} {
+   allow read: if signed();
+   allow create, update: if approved() && validCount(maxSlots());
+  }
+
+  // ---------- captains & teams ----------
+  match /captain_assignments/{id} {
+   allow read: if signed();
+   allow create: if approved() && id == request.resource.data.date + '_' + request.auth.uid && request.resource.data.userId == request.auth.uid && booking(request.resource.data.date, request.auth.uid);
+   allow delete: if signed() && (resource.data.userId == request.auth.uid || admin());
+  }
+  match /captain_counts/{date} {
+   allow read: if signed();
+   allow create, update: if approved() && validCount(2);
+  }
+  match /team_memberships/{id} {
+   allow read: if signed();
+   allow create, update: if approved() && id == request.resource.data.date + '_' + request.auth.uid && request.resource.data.userId == request.auth.uid && booking(request.resource.data.date, request.auth.uid) && exists(/databases/$(database)/documents/captain_assignments/$(request.resource.data.captainId));
+   // The player, an admin, or the team's captain may remove a membership.
+   allow delete: if signed() && (resource.data.userId == request.auth.uid || admin()
+    || (exists(/databases/$(database)/documents/captain_assignments/$(resource.data.captainId)) && get(/databases/$(database)/documents/captain_assignments/$(resource.data.captainId)).data.userId == request.auth.uid));
+  }
+
+  // ---------- tea stall ----------
+  match /tea_stall_presence/{id} {
+   allow read: if signed();
+   allow create: if approved() && id == request.resource.data.date + '_' + request.auth.uid && request.resource.data.userId == request.auth.uid;
+   allow delete: if signed() && (resource.data.userId == request.auth.uid || admin());
+  }
+  match /tea_stall_votes/{id} {
+   allow read: if signed();
+   allow create: if approved() && id == request.resource.data.date + '_' + request.auth.uid + '_' + request.resource.data.targetId && request.resource.data.userId == request.auth.uid && request.resource.data.targetId != request.auth.uid;
+   allow delete: if signed() && (resource.data.userId == request.auth.uid || resource.data.targetId == request.auth.uid || admin());
+  }
+ }
+}
