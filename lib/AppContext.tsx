@@ -2,8 +2,7 @@ import React,{createContext,useContext,useEffect,useMemo,useRef,useState} from '
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {deleteUser,onAuthStateChanged,signInAnonymously,signOut} from 'firebase/auth';
 import {collection,deleteDoc,doc,getDoc,getDocFromServer,onSnapshot,query,runTransaction,setDoc,where,writeBatch} from 'firebase/firestore';
-import {deleteObject,ref as storageRef} from 'firebase/storage';
-import {auth,db,firebaseEnabled,storage} from './firebase';
+import {auth,db,firebaseEnabled} from './firebase';
 import {ADMIN_CODE,HISTORY_DAYS,MAX_ADMINS} from './config';
 import {Booking,Captain,Charity,defaults,localDay,Membership,Notice,Player,Presence,Settings,validBirthDate,Vote} from './types';
 
@@ -139,8 +138,6 @@ export function AppProvider({children}:{children:React.ReactNode}){
   await Promise.all([...loose.values()].map(([path,id])=>deleteDoc(doc(fdb,path,id)).catch(()=>{})));
   const slot=data.adminSlots.find(s=>s.uid===uid);
   if(slot){const batch=writeBatch(fdb);batch.delete(doc(fdb,'admin_slots',slot.id));batch.delete(doc(fdb,'admins',uid));await batch.commit()}
-  const avatar=data.players.find(p=>p.id===uid)?.avatar;
-  if(storage&&avatar){try{await deleteObject(storageRef(storage,avatar))}catch{}}
   await deleteDoc(doc(fdb,'users',uid));
  };
  const purgeLocal=(id:string)=>{const ownedCaptains=data.captains.filter(c=>c.userId===id).map(c=>c.id);setData(p=>({...p,players:p.players.filter(x=>x.id!==id),adminSlots:p.adminSlots.filter(x=>x.uid!==id),bookings:p.bookings.filter(x=>x.userId!==id),captains:p.captains.filter(x=>x.userId!==id),memberships:p.memberships.filter(x=>x.userId!==id&&!ownedCaptains.includes(x.captainId)),presences:p.presences.filter(x=>x.userId!==id),votes:p.votes.filter(x=>x.userId!==id&&x.targetId!==id)}))};

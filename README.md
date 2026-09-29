@@ -1,6 +1,6 @@
 # Airport Cricket
 
-Expo + React Native + TypeScript app (Android/iOS/web) for a morning cricket team. Data is shared live through Firebase (Auth, Firestore, Storage). **No Cloud Functions and no paid Firebase plan are needed** – the free Spark plan is enough.
+Expo + React Native + TypeScript app (Android/iOS/web) for a morning cricket team. Data is shared live through Firebase (Auth, Firestore) and Cloudinary (free photo/video hosting). **No Cloud Functions and no paid Firebase plan are needed** – the free Spark plan is enough.
 
 > This is an Expo project, not Flutter. Build it with EAS (below), not `flutter build apk`.
 
@@ -11,19 +11,23 @@ Expo + React Native + TypeScript app (Android/iOS/web) for a morning cricket tea
 - **Admins (max 3)**: on Home, double-tap (or long-press) the red ball at the top right → enter your own player-profile name + the admin password (`732101`). Up to three different names can enrol; a fourth is refused.
   Admin tools: session/match info, **event**, notices, **best shot video (max 3 s) + photo**, approve/reject new players, delete any non-admin player, charity posts, and the **invite link** used by Share.
 - **Delete account**: every player can delete their own profile (Profile → Delete my profile). Only admins can delete other players, and never another admin.
-- **Share**: Profile → Share Airport Cricket. Set the download link once in Admin → Match → Invite link.
+- **Share**: Profile → Share Airport Cricket. Shares the GitHub release link by default; Admin → Match → Invite link can override it.
 
 ## 1. Firebase setup (free plan)
 
 1. https://console.firebase.google.com → create a project.
 2. **Build → Authentication → Get started → Sign-in method → Anonymous → Enable.**
 3. **Build → Firestore Database → Create database** (production mode, any region).
-4. **Build → Storage → Get started** (production mode).
-   (If Storage asks for a paid plan in your region, choose a supported region or upgrade only Storage; everything else stays free.)
+4. **Skip Firebase Storage** – it needs a paid (Blaze) plan. Photos/videos go to Cloudinary instead (step 1b).
 5. **Project settings (gear) → Your apps → Add app → Web (`</>`)**. Copy the `firebaseConfig` values.
 6. **Firestore → Rules**: paste all of `firestore.rules` → Publish.
-   **Storage → Rules**: paste all of `storage.rules` → Publish. If Firebase asks to grant Storage access to Firestore, click **Allow**.
 7. That's all – no manual documents are needed. The first time an admin saves settings, `app_settings/main` is created automatically.
+
+## 1b. Cloudinary setup (free, no card) for photos & videos
+
+1. Sign up at https://cloudinary.com (free plan).
+2. **Settings → Upload → Upload presets → Add upload preset** → set **Signing mode = Unsigned** → Save. Note the preset name.
+3. Note your **Cloud name** (Dashboard top-left).
 
 ## 2. Build the APK on GitHub (no laptop tooling needed)
 
@@ -32,7 +36,7 @@ entirely on GitHub's servers. You only need a browser.
 
 **One-time setup:**
 1. On GitHub, open this repo → **Settings → Secrets and variables → Actions → New repository secret**.
-2. Add these 6 secrets, one at a time, with the values from Firebase console → ⚙ Project settings → Your apps → Web app → `firebaseConfig`:
+2. Add these 8 secrets, one at a time, with the values from Firebase console → ⚙ Project settings → Your apps → Web app → `firebaseConfig`:
 
    | Secret name | firebaseConfig field |
    |---|---|
@@ -43,12 +47,17 @@ entirely on GitHub's servers. You only need a browser.
    | `FIREBASE_MESSAGING_SENDER_ID` | messagingSenderId |
    | `FIREBASE_APP_ID` | appId |
 
+   | `CLOUDINARY_CLOUD_NAME` | your Cloudinary cloud name |
+   | `CLOUDINARY_UPLOAD_PRESET` | your unsigned upload preset name |
+
    Skip this and the app still installs, but stays in **local-only** mode (a red "Not connected to the team" card appears on Home) — this was the cause of the "no Firebase key" warning: the keys must live here (GitHub secrets), not in `eas.json` — `eas.json` is only read by the separate EAS build path below, never by this workflow.
 
 **Every time you want a new build:**
 1. Push any change to the `main` branch (or open the repo's **Actions** tab → **Build Android APK** → **Run workflow**, no code change needed).
 2. Wait ~10–15 minutes for the run to go green.
-3. Open that run → scroll to **Artifacts** → download **airport-cricket-apk** (a `.zip` containing the `.apk`).
+3. The APK is also published automatically at a permanent link (used by the in-app Share button):
+   `https://github.com/amitkarmakar760-glitch/airport_cricket/releases/latest/download/airport-cricket.apk`
+   (or download the **airport-cricket-apk** artifact from the run). The repo must be public for this link to work for others.
 4. Unzip it on your phone or laptop, then install the `.apk` as usual (allow "install unknown apps" if asked).
 
 ### Alternative: build locally with EAS (only if you prefer your own laptop)
