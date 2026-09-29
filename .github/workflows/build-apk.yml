@@ -25,7 +25,7 @@ jobs:
           java-version: '17'
 
       - name: Install JS dependencies
-        run: npm ci
+        run: npm install
 
       - name: Make sure expo-video is installed
         run: npx expo install expo-video
