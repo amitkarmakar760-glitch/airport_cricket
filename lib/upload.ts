@@ -1,5 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import {Platform} from 'react-native';
+import {File} from 'expo-file-system';
 import {firebaseEnabled} from './firebase';
 
 // Free image/video hosting via Cloudinary (no Firebase Storage, no credit card).
@@ -14,7 +15,9 @@ async function uploadToCloudinary(uri: string, kind: 'image' | 'video', folder: 
     const blob = await (await fetch(uri)).blob();
     form.append('file', blob);
   } else {
-    form.append('file', {uri, type: mime, name: fileName} as any);
+    // Expo's fetch only accepts strings, Blobs or expo-file-system File objects
+    // (the old {uri,type,name} trick throws "Unsupported FormDataPart implementation").
+    form.append('file', new File(uri) as any);
   }
   form.append('upload_preset', UPLOAD_PRESET);
   form.append('folder', 'airport_cricket/' + folder);
