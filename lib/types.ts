@@ -7,6 +7,7 @@ export type Booking = {id:string; date:string; userId:string; name:string; role:
 export type Captain = {id:string; date:string; userId:string; name:string; createdAt:number};
 export type Membership = {id:string; date:string; userId:string; captainId:string};
 export type Presence = {id:string; date:string; userId:string; name:string; createdAt:number};
+export type Attendance = {id:string; date:string; userId:string; name:string; createdAt:number; markedBy:string};
 export type Vote = {id:string; date:string; userId:string; targetId:string};
 export type Notice = {id:string; title:string; body:string; createdAt:number};
 export type Charity = {id:string; title:string; description:string; amount:number; images:string[]; date:string; createdAt:number};

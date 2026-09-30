@@ -73,6 +73,14 @@ service cloud.firestore {
    allow create, update: if approved() && validCount(maxSlots());
   }
 
+  // ---------- attendance sheet (admins mark, everyone can read) ----------
+  match /attendance/{id} {
+   allow read: if signed();
+   allow create: if admin() && request.resource.data.userId is string && id == request.resource.data.date + '_' + request.resource.data.userId;
+   allow delete: if admin();
+   allow update: if false;
+  }
+
   // ---------- captains & teams ----------
   match /captain_assignments/{id} {
    allow read: if signed();
