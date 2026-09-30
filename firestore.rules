@@ -81,6 +81,25 @@ service cloud.firestore {
    allow update: if false;
   }
 
+  // ---------- scorecards (admins score, everyone can read) ----------
+  match /matches/{id} {
+   allow read: if signed();
+   allow create, update: if admin() && request.resource.data.date is string && request.resource.data.status in ['live', 'done'];
+   allow delete: if admin();
+  }
+
+  // ---------- team chat (any approved player can post; delete own, admins delete any) ----------
+  match /chat_messages/{id} {
+   allow read: if signed();
+   allow create: if approved() && request.resource.data.keys().hasOnly(['userId', 'name', 'text', 'createdAt'])
+    && request.resource.data.userId == request.auth.uid
+    && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 500
+    && request.resource.data.createdAt is int
+    && request.resource.data.name == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name;
+   allow delete: if signed() && (resource.data.userId == request.auth.uid || admin());
+   allow update: if false;
+  }
+
   // ---------- captains & teams ----------
   match /captain_assignments/{id} {
    allow read: if signed();

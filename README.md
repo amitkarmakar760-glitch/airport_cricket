@@ -1,4 +1,4 @@
-# Airport Cricket
+# Airport Cricket Team
 
 Expo + React Native + TypeScript app (Android/iOS/web) for a morning cricket team. Data is shared live through Firebase (Auth, Firestore) and Cloudinary (free photo/video hosting). **No Cloud Functions and no paid Firebase plan are needed** – the free Spark plan is enough.
 

@@ -4,11 +4,11 @@ import {deleteUser,onAuthStateChanged,signInAnonymously,signOut} from 'firebase/
 import {collection,deleteDoc,doc,getDoc,getDocFromServer,onSnapshot,query,runTransaction,setDoc,where,writeBatch} from 'firebase/firestore';
 import {auth,db,firebaseEnabled} from './firebase';
 import {ADMIN_CODE,HISTORY_DAYS,MAX_ADMINS} from './config';
-import {Attendance,Booking,Captain,Charity,defaults,localDay,Membership,Notice,Player,Presence,Settings,validBirthDate,Vote} from './types';
+import {Attendance,Booking,Captain,Charity,defaults,localDay,Match,Membership,Notice,Player,Presence,Settings,validBirthDate,Vote} from './types';
 
 export type AdminSlot={id:string;uid:string;name:string};
-type Store={players:Player[];adminSlots:AdminSlot[];bookings:Booking[];attendance:Attendance[];captains:Captain[];memberships:Membership[];presences:Presence[];votes:Vote[];notices:Notice[];charities:Charity[];settings:Settings};
-const initial:Store={players:[],adminSlots:[],bookings:[],attendance:[],captains:[],memberships:[],presences:[],votes:[],notices:[],charities:[],settings:defaults};
+type Store={players:Player[];adminSlots:AdminSlot[];bookings:Booking[];attendance:Attendance[];matches:Match[];captains:Captain[];memberships:Membership[];presences:Presence[];votes:Vote[];notices:Notice[];charities:Charity[];settings:Settings};
+const initial:Store={players:[],adminSlots:[],bookings:[],attendance:[],matches:[],captains:[],memberships:[],presences:[],votes:[],notices:[],charities:[],settings:defaults};
 
 type Ctx={
  ready:boolean;online:boolean;user:Player|null;adminAuthorized:boolean;guest:boolean;pausedProfile:Player|null;data:Store;error:string;clearError:()=>void;
@@ -17,6 +17,8 @@ type Ctx={
  approvePlayer:(id:string)=>Promise<void>;adminLogin:(name:string,password:string)=>Promise<void>;deletePlayer:(id:string)=>Promise<void>;
  book:(date:string)=>Promise<void>;cancelBooking:(date:string)=>Promise<void>;beCaptain:(date:string)=>Promise<void>;joinTeam:(date:string,captainId:string)=>Promise<void>;
  setAttendance:(date:string,player:Player,present:boolean)=>Promise<void>;
+ saveMatch:(m:Match)=>Promise<void>;
+ removeMatch:(id:string)=>Promise<void>;
  togglePresence:(date:string)=>Promise<void>;toggleVote:(date:string,targetId:string)=>Promise<void>;saveSettings:(fields:Partial<Settings>)=>Promise<void>;
  saveNotice:(title:string,body:string,id?:string)=>Promise<void>;removeNotice:(id:string)=>Promise<void>;saveCharity:(post:Charity)=>Promise<void>;removeCharity:(id:string)=>Promise<void>;
 };
@@ -67,7 +69,7 @@ export function AppProvider({children}:{children:React.ReactNode}){
  useEffect(()=>{
   if(!firebaseEnabled||!db||!profile)return;
   const cutoff=localDay(-HISTORY_DAYS);
-  const lists:[keyof Store,string,boolean][]=[['players','users',false],['adminSlots','admin_slots',false],['bookings','bookings',true],['attendance','attendance',true],['captains','captain_assignments',true],['memberships','team_memberships',true],['presences','tea_stall_presence',true],['votes','tea_stall_votes',true],['notices','notices',false],['charities','charity_posts',false]];
+  const lists:[keyof Store,string,boolean][]=[['players','users',false],['adminSlots','admin_slots',false],['bookings','bookings',true],['attendance','attendance',true],['matches','matches',true],['captains','captain_assignments',true],['memberships','team_memberships',true],['presences','tea_stall_presence',true],['votes','tea_stall_votes',true],['notices','notices',false],['charities','charity_posts',false]];
   const unsubs=lists.map(([field,path,dated])=>onSnapshot(dated?query(collection(db!,path),where('date','>=',cutoff)):collection(db!,path),snap=>setData(prev=>({...prev,[field]:snap.docs.map(d=>field==='adminSlots'?{...d.data(),id:d.id}:d.data())})),e=>setError(e.message)));
   unsubs.push(onSnapshot(doc(db,'app_settings','main'),snap=>setData(prev=>({...prev,settings:{...defaults,...(snap.data()||{})}})),e=>setError(e.message)));
   return()=>unsubs.forEach(fn=>fn());
@@ -274,10 +276,12 @@ export function AppProvider({children}:{children:React.ReactNode}){
   if(present)await put('attendance','attendance',{id,date,userId:player.id,name:player.name,createdAt:Date.now(),markedBy:u.id});
   else await remove('attendance','attendance',id);
  }catch(e){fail(e)}};
+ const saveMatch=async(m:Match)=>{try{requireAdmin();await put('matches','matches',m)}catch(e){fail(e)}};
+ const removeMatch=async(id:string)=>{try{requireAdmin();await remove('matches','matches',id)}catch(e){fail(e)}};
  const removeNotice=async(id:string)=>{try{requireAdmin();await remove('notices','notices',id)}catch(e){fail(e)}};
  const saveCharity=async(post:Charity)=>{try{requireAdmin();if(!post.title.trim()||!post.description.trim()||!post.amount||post.amount<0)throw Error('Enter a title, description and a valid amount.');await put('charities','charity_posts',post)}catch(e){fail(e)}};
  const removeCharity=async(id:string)=>{try{requireAdmin();await remove('charities','charity_posts',id)}catch(e){fail(e)}};
 
- return <Context.Provider value={{ready,online:firebaseEnabled,user,adminAuthorized,guest,pausedProfile,data:view,error,clearError:()=>setError(''),resume,pause,join,logout,recheckProfile,deleteProfile,enterGuest:()=>setGuest(true),showAuth:()=>setGuest(false),updateProfile,approvePlayer,adminLogin,deletePlayer,book,cancelBooking,beCaptain,joinTeam,setAttendance,togglePresence,toggleVote,saveSettings,saveNotice,removeNotice,saveCharity,removeCharity}}>{children}</Context.Provider>;
+ return <Context.Provider value={{ready,online:firebaseEnabled,user,adminAuthorized,guest,pausedProfile,data:view,error,clearError:()=>setError(''),resume,pause,join,logout,recheckProfile,deleteProfile,enterGuest:()=>setGuest(true),showAuth:()=>setGuest(false),updateProfile,approvePlayer,adminLogin,deletePlayer,book,cancelBooking,beCaptain,joinTeam,setAttendance,saveMatch,removeMatch,togglePresence,toggleVote,saveSettings,saveNotice,removeNotice,saveCharity,removeCharity}}>{children}</Context.Provider>;
 }
 export const useApp=()=>useContext(Context);

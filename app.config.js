@@ -1,6 +1,6 @@
 module.exports = ({ config }) => ({
   ...config,
-  name: 'Airport Cricket',
+  name: 'Airport Cricket Team',
   slug: 'airport-cricket',
   // expo-video needs to be listed here so `expo prebuild` links its native
   // module into the Android project. (Its auto-installer can't write this

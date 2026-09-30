@@ -16,3 +16,13 @@ export const defaults:Settings={maxSlots:22,sessionLabel:'Morning cricket',match
 export const localDay=(offset=0)=>{const d=new Date();d.setDate(d.getDate()+offset);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 export const prettyDate=(date:string)=>new Date(date+'T12:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
 export const rupees=(n:number)=>'₹ '+new Intl.NumberFormat('en-IN').format(n);
+
+// ---------- scorecards (ball-by-ball) ----------
+export type MPlayer = {id:string; name:string};
+export type MTeam = {name:string; players:MPlayer[]};
+export type Wicket = {p:string; k:'bowled'|'caught'|'lbw'|'runout'|'stumped'|'hitwicket'|'other'};
+// One delivery. bat/non/bw are the ids of striker, non-striker and bowler at that moment.
+// r = runs off the bat, x = extra type, xr = extra runs (wide/no-ball include the 1 penalty run).
+export type Ball = {bat:string; non:string; bw:string; r:number; x?:'wd'|'nb'|'b'|'lb'; xr?:number; w?:Wicket};
+export type Innings = {bat:'A'|'B'; balls:Ball[]; done:boolean};
+export type Match = {id:string; date:string; createdAt:number; createdBy:string; title:string; overs:number; A:MTeam; B:MTeam; innings:Innings[]; status:'live'|'done'; result:string};

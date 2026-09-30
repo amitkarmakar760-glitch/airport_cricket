@@ -38,7 +38,7 @@ export default function AttendanceScreen(){
 
  const shareSheet=async()=>{
   const lines=sheet.list.map((r,i)=>`${i+1}. ${r.player.name} — ${r.days}/${sheet.sessions}${sheet.sessions?` (${Math.round(r.days*100/sheet.sessions)}%)`:''}`);
-  try{await Share.share({message:`Airport Cricket attendance\nLast ${range} days · ${sheet.sessions} session${sheet.sessions===1?'':'s'}\n\n${lines.join('\n')}`})}catch{}
+  try{await Share.share({message:`Airport Cricket Team attendance\nLast ${range} days · ${sheet.sessions} session${sheet.sessions===1?'':'s'}\n\n${lines.join('\n')}`})}catch{}
  };
 
  const Toggle=({label,on,onPress}:{label:string;on:boolean;onPress:()=>void})=><Pressable onPress={onPress} style={{flex:1,backgroundColor:on?C.green:'white',paddingVertical:12,borderRadius:12,alignItems:'center'}}><Text style={{color:on?'white':C.gray,fontWeight:'800',fontSize:13}}>{label}</Text></Pressable>;
