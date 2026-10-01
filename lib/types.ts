@@ -17,6 +17,35 @@ export const localDay=(offset=0)=>{const d=new Date();d.setDate(d.getDate()+offs
 export const prettyDate=(date:string)=>new Date(date+'T12:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
 export const rupees=(n:number)=>'₹ '+new Intl.NumberFormat('en-IN').format(n);
 
+
+
+export type FundMember = {
+  id:string;
+  name:string;
+  userId?:string;
+  external?:boolean;
+  createdAt:number;
+  createdBy?:string;
+};
+export type FundContribution = {
+  id:string;
+  memberId:string;
+  year:number;
+  month:number;
+  amount:number;
+  updatedAt:number;
+  updatedBy:string;
+};
+export type FundExpense = {
+  id:string;
+  year:number;
+  month:number;
+  amount:number;
+  description:string;
+  createdAt:number;
+  createdBy:string;
+};
+
 // ---------- scorecards (ball-by-ball) ----------
 export type MPlayer = {id:string; name:string};
 export type MTeam = {name:string; players:MPlayer[]};
