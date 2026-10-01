@@ -63,6 +63,34 @@ service cloud.firestore {
   match /notices/{id} { allow read: if signed(); allow write: if admin(); }
   match /charity_posts/{id} { allow read: if signed(); allow write: if admin(); }
 
+
+  // ---------- team fund (admins write, signed-in players read) ----------
+  match /fund_members/{id} {
+   allow read: if signed();
+   allow create, update: if admin() && request.resource.data.name is string && request.resource.data.name.size() > 0;
+   allow delete: if admin();
+  }
+  match /fund_contributions/{id} {
+   allow read: if signed();
+   allow create, update: if admin()
+    && request.resource.data.memberId is string
+    && request.resource.data.year is int
+    && request.resource.data.month is int
+    && request.resource.data.month >= 1 && request.resource.data.month <= 12
+    && request.resource.data.amount is number && request.resource.data.amount >= 0;
+   allow delete: if admin();
+  }
+  match /fund_expenses/{id} {
+   allow read: if signed();
+   allow create, update: if admin()
+    && request.resource.data.year is int
+    && request.resource.data.month is int
+    && request.resource.data.month >= 1 && request.resource.data.month <= 12
+    && request.resource.data.amount is number && request.resource.data.amount >= 0
+    && request.resource.data.description is string && request.resource.data.description.size() > 0;
+   allow delete: if admin();
+  }
+
   // ---------- bookings ----------
   match /bookings/{id} {
    allow read: if signed();
