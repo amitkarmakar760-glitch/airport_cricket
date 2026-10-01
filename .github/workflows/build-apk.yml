@@ -38,6 +38,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required Android SDK and NDK
+        run: |
+          sdkmanager --install "platform-tools" "ndk;27.1.12297006"
+          yes | sdkmanager --licenses || true
+
       - name: Install JS dependencies
         run: npm install
 
