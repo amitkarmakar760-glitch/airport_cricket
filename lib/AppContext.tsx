@@ -117,7 +117,8 @@ export function AppProvider({children}:{children:React.ReactNode}){
   try{
    if(!db||!profile)return;
    const targets=tokensRef.current.filter(t=>t.uid!==profile.id&&(kind!=='chat'||t.chat)&&(kind!=='join'||adminUids.has(t.uid)));
-   if(targets.length)sendPush(targets.map(t=>t.token),title,body,{kind});
+   const tokens=[...new Set(targets.map(t=>t.token).filter(Boolean))];
+   if(tokens.length)sendPush(tokens,title,body,{kind});
   }catch{}
  };
 
@@ -331,10 +332,12 @@ export function AppProvider({children}:{children:React.ReactNode}){
  // ---- admin content ----
  const saveSettings=async(fields:Partial<Settings>)=>{try{
   requireAdmin();
+  const newEvent=!!fields.specialMatch&&fields.specialMatch!==data.settings.specialMatch;
   if(db)await setDoc(doc(db,'app_settings','main'),clean(fields),{merge:true}); // merge: never overwrite another admin's fields
   else setData(p=>({...p,settings:{...p.settings,...fields}}));
+  if(newEvent)notify('📅 New event',`${fields.specialMatch}${fields.specialTime?' · '+fields.specialTime:''}`,'notice');
  }catch(e){fail(e)}};
- const saveNotice=async(title:string,body:string,id?:string)=>{try{requireAdmin();if(!title.trim()||!body.trim())throw Error('Enter a title and message.');await put('notices','notices',{id:id||'notice_'+Date.now(),title:title.trim(),body:body.trim(),createdAt:Date.now()})}catch(e){fail(e)}};
+ const saveNotice=async(title:string,body:string,id?:string)=>{try{requireAdmin();if(!title.trim()||!body.trim())throw Error('Enter a title and message.');const isNew=!id;await put('notices','notices',{id:id||'notice_'+Date.now(),title:title.trim(),body:body.trim(),createdAt:Date.now()});if(isNew)notify('📢 '+title.trim(),body.trim().slice(0,140),'notice')}catch(e){fail(e)}};
  const setAttendance=async(date:string,player:Player,present:boolean)=>{try{
   const u=requireAdmin(),id=`${date}_${player.id}`;
   if(date>localDay())throw Error('Attendance cannot be marked for a future day.');
