@@ -5,11 +5,11 @@ import {collection,deleteDoc,doc,getDoc,getDocFromServer,onSnapshot,query,runTra
 import {auth,db,firebaseEnabled} from './firebase';
 import {PushState,registerForPush,sendPush} from './notifications';
 import {ADMIN_CODE,HISTORY_DAYS,MAX_ADMINS} from './config';
-import {Attendance,Booking,Captain,Charity,defaults,localDay,Match,Membership,Notice,Player,Presence,Settings,validBirthDate,Vote} from './types';
+import {Attendance,Booking,Captain,Charity,defaults,localDay,Match,Membership,Notice,Player,Presence,Settings,validBirthDate,Vote,FundMember,FundContribution,FundExpense} from './types';
 
 export type AdminSlot={id:string;uid:string;name:string};
-type Store={players:Player[];adminSlots:AdminSlot[];bookings:Booking[];attendance:Attendance[];matches:Match[];captains:Captain[];memberships:Membership[];presences:Presence[];votes:Vote[];notices:Notice[];charities:Charity[];settings:Settings};
-const initial:Store={players:[],adminSlots:[],bookings:[],attendance:[],matches:[],captains:[],memberships:[],presences:[],votes:[],notices:[],charities:[],settings:defaults};
+type Store={players:Player[];adminSlots:AdminSlot[];bookings:Booking[];attendance:Attendance[];matches:Match[];captains:Captain[];memberships:Membership[];presences:Presence[];votes:Vote[];notices:Notice[];charities:Charity[];fundMembers:FundMember[];fundContributions:FundContribution[];fundExpenses:FundExpense[];settings:Settings};
+const initial:Store={players:[],adminSlots:[],bookings:[],attendance:[],matches:[],captains:[],memberships:[],presences:[],votes:[],notices:[],charities:[],fundMembers:[],fundContributions:[],fundExpenses:[],settings:defaults};
 
 type Ctx={
  ready:boolean;online:boolean;user:Player|null;adminAuthorized:boolean;guest:boolean;pausedProfile:Player|null;data:Store;error:string;clearError:()=>void;
@@ -23,6 +23,7 @@ type Ctx={
  removeMatch:(id:string)=>Promise<void>;
  togglePresence:(date:string)=>Promise<void>;toggleVote:(date:string,targetId:string)=>Promise<void>;saveSettings:(fields:Partial<Settings>)=>Promise<void>;
  saveNotice:(title:string,body:string,id?:string)=>Promise<void>;removeNotice:(id:string)=>Promise<void>;saveCharity:(post:Charity)=>Promise<void>;removeCharity:(id:string)=>Promise<void>;
+ addFundMember:(name:string)=>Promise<void>;saveFundContribution:(memberId:string,year:number,month:number,amount:number)=>Promise<void>;saveFundExpense:(expense:FundExpense)=>Promise<void>;removeFundExpense:(id:string)=>Promise<void>;
 };
 const Context=createContext<Ctx>(null as any);
 const key='airport-cricket-v1';
@@ -76,7 +77,7 @@ export function AppProvider({children}:{children:React.ReactNode}){
  useEffect(()=>{
   if(!firebaseEnabled||!db||!profile)return;
   const cutoff=localDay(-HISTORY_DAYS);
-  const lists:[keyof Store,string,boolean][]=[['players','users',false],['adminSlots','admin_slots',false],['bookings','bookings',true],['attendance','attendance',true],['matches','matches',true],['captains','captain_assignments',true],['memberships','team_memberships',true],['presences','tea_stall_presence',true],['votes','tea_stall_votes',true],['notices','notices',false],['charities','charity_posts',false]];
+  const lists:[keyof Store,string,boolean][]=[['players','users',false],['adminSlots','admin_slots',false],['bookings','bookings',true],['attendance','attendance',true],['matches','matches',true],['captains','captain_assignments',true],['memberships','team_memberships',true],['presences','tea_stall_presence',true],['votes','tea_stall_votes',true],['notices','notices',false],['charities','charity_posts',false],['fundMembers','fund_members',false],['fundContributions','fund_contributions',false],['fundExpenses','fund_expenses',false]];
   const unsubs=lists.map(([field,path,dated])=>onSnapshot(dated?query(collection(db!,path),where('date','>=',cutoff)):collection(db!,path),snap=>setData(prev=>({...prev,[field]:snap.docs.map(d=>field==='adminSlots'?{...d.data(),id:d.id}:d.data())})),e=>setError(e.message)));
   unsubs.push(onSnapshot(doc(db,'app_settings','main'),snap=>setData(prev=>({...prev,settings:{...defaults,...(snap.data()||{})}})),e=>setError(e.message)));
   return()=>unsubs.forEach(fn=>fn());
@@ -341,6 +342,34 @@ export function AppProvider({children}:{children:React.ReactNode}){
  const saveCharity=async(post:Charity)=>{try{requireAdmin();if(!post.title.trim()||!post.description.trim()||!post.amount||post.amount<0)throw Error('Enter a title, description and a valid amount.');await put('charities','charity_posts',post);if(!data.charities.some(c=>c.id===post.id))notify('❤️ New charity update',post.title.trim(),'charity')}catch(e){fail(e)}};
  const removeCharity=async(id:string)=>{try{requireAdmin();await remove('charities','charity_posts',id)}catch(e){fail(e)}};
 
- return <Context.Provider value={{ready,online:firebaseEnabled,user,adminAuthorized,guest,pausedProfile,data:view,error,clearError:()=>setError(''),resume,pause,join,logout,recheckProfile,deleteProfile,enterGuest:()=>setGuest(true),showAuth:()=>setGuest(false),updateProfile,approvePlayer,adminLogin,deletePlayer,book,cancelBooking,beCaptain,joinTeam,setAttendance,saveMatch,removeMatch,notify,push,chatNotify,setChatNotify,togglePresence,toggleVote,saveSettings,saveNotice,removeNotice,saveCharity,removeCharity}}>{children}</Context.Provider>;
+ const addFundMember=async(name:string)=>{
+  try{
+   const u=requireAdmin(); const cleanName=name.trim();
+   if(!cleanName)throw Error('Enter the member name.');
+   if(data.players.some(p=>same(p.name,cleanName))||data.fundMembers.some(p=>same(p.name,cleanName)))throw Error('A member with this name already exists.');
+   await put('fundMembers','fund_members',{id:`fm_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,name:cleanName,external:true,createdAt:Date.now(),createdBy:u.id});
+  }catch(e){fail(e)}
+ };
+ const saveFundContribution=async(memberId:string,year:number,month:number,amount:number)=>{
+  try{
+   const u=requireAdmin();
+   if(!memberId||year<2000||month<1||month>12||!Number.isFinite(amount)||amount<0)throw Error('Enter a valid member, month, year and amount.');
+   const exists=data.players.some(p=>p.id===memberId)||data.fundMembers.some(p=>p.id===memberId);
+   if(!exists)throw Error('Member not found.');
+   const id=`${memberId}_${year}_${month}`;
+   await put('fundContributions','fund_contributions',{id,memberId,year,month,amount,updatedAt:Date.now(),updatedBy:u.id});
+  }catch(e){fail(e)}
+ };
+ const saveFundExpense=async(expense:FundExpense)=>{
+  try{
+   const u=requireAdmin();
+   if(!expense.description.trim()||expense.amount<0||expense.year<2000||expense.month<1||expense.month>12)throw Error('Enter a valid expense.');
+   await put('fundExpenses','fund_expenses',{...expense,description:expense.description.trim(),createdBy:u.id,createdAt:expense.createdAt||Date.now()});
+  }catch(e){fail(e)}
+ };
+ const removeFundExpense=async(id:string)=>{try{requireAdmin();await remove('fundExpenses','fund_expenses',id)}catch(e){fail(e)}};
+
+
+ return <Context.Provider value={{ready,online:firebaseEnabled,user,adminAuthorized,guest,pausedProfile,data:view,error,clearError:()=>setError(''),resume,pause,join,logout,recheckProfile,deleteProfile,enterGuest:()=>setGuest(true),showAuth:()=>setGuest(false),updateProfile,approvePlayer,adminLogin,deletePlayer,book,cancelBooking,beCaptain,joinTeam,setAttendance,saveMatch,removeMatch,notify,push,chatNotify,setChatNotify,togglePresence,toggleVote,saveSettings,saveNotice,removeNotice,saveCharity,removeCharity,addFundMember,saveFundContribution,saveFundExpense,removeFundExpense}}>{children}</Context.Provider>;
 }
 export const useApp=()=>useContext(Context);
