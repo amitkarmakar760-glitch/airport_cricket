@@ -87,7 +87,14 @@ export function AppProvider({children}:{children:React.ReactNode}){
  const adminUids=useMemo(()=>new Set(data.adminSlots.map(s=>s.uid)),[data.adminSlots]);
  const adminAuthorized=!!profile&&adminUids.has(profile.id);
  const user=useMemo<Player|null>(()=>profile&&adminAuthorized?{...profile,isAdmin:true,approvalStatus:'approved'}:profile,[profile,adminAuthorized]);
- const view=useMemo<Store>(()=>({...data,players:data.players.map(p=>adminUids.has(p.id)?{...p,isAdmin:true,approvalStatus:'approved' as const}:p)}),[data,adminUids]);
+ // One entry per name: if the same person has two profiles (old + new login), keep the admin-seat / approved one.
+ const view=useMemo<Store>(()=>{
+  const marked=data.players.map(p=>adminUids.has(p.id)?{...p,isAdmin:true,approvalStatus:'approved' as const}:p);
+  const score=(p:Player)=>(adminUids.has(p.id)?2:0)+(p.approvalStatus!=='pending'?1:0);
+  const best=new Map<string,Player>();
+  for(const p of marked){const k=nameKey(p.name);const cur=best.get(k);if(!cur||score(p)>score(cur))best.set(k,p)}
+  return {...data,players:[...best.values()]};
+ },[data,adminUids]);
 
  // ---- push notifications (free: Expo push service -> Google FCM) ----
  const [push,setPush]=useState<PushState>({status:'unknown',message:'',token:''});
