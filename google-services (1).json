@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1024291584226",
+    "project_id": "airport-cricket-2473f",
+    "storage_bucket": "airport-cricket-2473f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1024291584226:android:df17f5124e218ed4efc6bb",
+        "android_client_info": {
+          "package_name": "com.airportcricket.club"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmEQ6Ut1r62tU-AnTCfxrIFDOpt5LdD1Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
