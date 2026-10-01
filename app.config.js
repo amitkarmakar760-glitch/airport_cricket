@@ -30,9 +30,10 @@ module.exports = ({ config }) => ({
   },
   // expo-video and expo-notifications must be listed here so `expo prebuild`
   // links their native modules into the Android project.
+  // The custom notification sound file must exist at ./assets/airport_ping.wav.
   plugins: [
     ...(config.plugins || []),
     'expo-video',
-    ['expo-notifications', { icon: './assets/android-icon-monochrome.png', color: '#B4500F' }],
+    ['expo-notifications', { icon: './assets/android-icon-monochrome.png', color: '#B4500F', sounds: ['./assets/airport_ping.wav'] }],
   ],
 });
