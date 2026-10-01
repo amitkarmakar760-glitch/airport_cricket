@@ -51,7 +51,7 @@ export default function NewMatchScreen({navigation}:any){
   </View>)}
   <Card style={{marginTop:8,marginBottom:18}}>
    <Label style={{marginBottom:8}}>ADD A GUEST PLAYER (not in the app)</Label>
-   <TextInput value={guest} onChangeText={setGuest} placeholder='Guest name' placeholderTextColor='#9BAC9E' style={{borderRadius:14,backgroundColor:'#F5F8F3',borderWidth:1,borderColor:C.line,color:C.ink,fontSize:15,paddingHorizontal:15,paddingVertical:11,marginBottom:10}}/>
+   <TextInput value={guest} onChangeText={setGuest} placeholder='Guest name' placeholderTextColor='#B8A898' style={{borderRadius:14,backgroundColor:'#FBF6F0',borderWidth:1,borderColor:C.line,color:C.ink,fontSize:15,paddingHorizontal:15,paddingVertical:11,marginBottom:10}}/>
    <View style={{flexDirection:'row',gap:8}}><View style={{flex:1}}><Button small variant='light' title='Add to A' onPress={()=>addGuest('A')}/></View><View style={{flex:1}}><Button small variant='light' title='Add to B' onPress={()=>addGuest('B')}/></View></View>
    {guests.map(g=><Pressable key={g.id} onPress={()=>setGuests(x=>x.filter(y=>y.id!==g.id))} style={{flexDirection:'row',justifyContent:'space-between',paddingVertical:8}}><Text style={{color:C.ink}}>{g.name} · Team {g.team}</Text><Text style={{color:C.red,fontWeight:'800',fontSize:12}}>Remove</Text></Pressable>)}
   </Card>

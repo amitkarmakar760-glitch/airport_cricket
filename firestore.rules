@@ -46,7 +46,9 @@ service cloud.firestore {
     && exists(/databases/$(database)/documents/admin_enroll/$(request.auth.uid)) && !holds('1') && !holds('2') && !holds('3');
    // A seat is only released together with its admin marker (done when the admin deletes their profile).
    allow delete: if signed() && resource.data.uid == request.auth.uid && !existsAfter(/databases/$(database)/documents/admins/$(request.auth.uid));
-   allow update: if false;
+   // The same admin (same name) may move their seat to a new login after proving the admin password.
+   allow update: if slot in ['1', '2', '3'] && me(request.resource.data.uid) && request.resource.data.keys().hasOnly(['uid', 'name']) && request.resource.data.name == resource.data.name
+    && exists(/databases/$(database)/documents/admin_enroll/$(request.auth.uid));
   }
   // Step 3: the admin marker, only for someone who holds a seat.
   match /admins/{uid} {
@@ -86,6 +88,27 @@ service cloud.firestore {
    allow read: if signed();
    allow create, update: if admin() && request.resource.data.date is string && request.resource.data.status in ['live', 'done'];
    allow delete: if admin();
+  }
+
+  // ---------- memories (any approved player adds; delete own, admins delete any) ----------
+  match /memories/{id} {
+   allow read: if signed();
+   allow create: if approved() && request.resource.data.keys().hasOnly(['userId', 'name', 'title', 'description', 'date', 'mediaUrl', 'mediaType', 'createdAt'])
+    && request.resource.data.userId == request.auth.uid
+    && request.resource.data.mediaType in ['image', 'video', 'none']
+    && request.resource.data.mediaUrl is string && request.resource.data.title is string && request.resource.data.title.size() <= 80
+    && request.resource.data.description is string && request.resource.data.description.size() <= 1000
+    && request.resource.data.date is string && request.resource.data.date.size() == 10
+    && request.resource.data.name == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.name;
+   allow delete: if signed() && (resource.data.userId == request.auth.uid || admin());
+   allow update: if false;
+  }
+
+  // ---------- push notification tokens ----------
+  match /push_tokens/{uid} {
+   allow read: if signed();
+   allow create, update: if me(uid) && request.resource.data.keys().hasOnly(['token', 'name', 'chat', 'updatedAt']) && request.resource.data.token is string && request.resource.data.token.size() < 200;
+   allow delete: if me(uid) || admin();
   }
 
   // ---------- team chat (any approved player can post; delete own, admins delete any) ----------

@@ -72,7 +72,7 @@ export default function AttendanceScreen(){
      <View style={{width:36,height:36,borderRadius:18,backgroundColor:here?C.green:C.mint,alignItems:'center',justifyContent:'center'}}><Text style={{color:here?'white':C.green,fontWeight:'900'}}>{p.name[0]?.toUpperCase()}</Text></View>
      <View style={{flex:1}}><Text style={{color:C.ink,fontWeight:'800',fontSize:14}}>{p.name}</Text><Text style={{color:C.gray,fontSize:11,marginTop:2}}>{p.role}{booked.has(p.id)?' · Booked':''}</Text></View>
      {adminAuthorized?<Pressable disabled={!!busy} onPress={()=>toggle(p)} style={{backgroundColor:here?C.green:C.bg,paddingHorizontal:14,paddingVertical:9,borderRadius:99,opacity:busy===p.id?0.5:1}}><Text style={{color:here?'white':C.gray,fontWeight:'800',fontSize:12}}>{here?'Present':'Absent'}</Text></Pressable>
-     :<Ionicons name={here?'checkmark-circle':'ellipse-outline'} size={22} color={here?C.green:'#C9D3CB'}/>}
+     :<Ionicons name={here?'checkmark-circle':'ellipse-outline'} size={22} color={here?C.green:'#D9CBBE'}/>}
     </View>}}/>
   :<FlatList data={sheet.list} keyExtractor={r=>r.player.id} ListHeaderComponent={header} contentContainerStyle={{paddingBottom:100}} ListEmptyComponent={<View style={{marginHorizontal:20}}><Card><Empty icon='clipboard-outline' title='Nothing recorded yet' subtitle='Attendance will show here once an admin marks a session.'/></Card></View>}
     renderItem={({item:r,index})=>{const pct=sheet.sessions?Math.round(r.days*100/sheet.sessions):0;return <View style={{marginHorizontal:20,marginBottom:8,backgroundColor:'white',borderRadius:14,padding:13}}>

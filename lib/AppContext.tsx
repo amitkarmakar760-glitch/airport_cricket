@@ -1,8 +1,9 @@
 import React,{createContext,useContext,useEffect,useMemo,useRef,useState} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {deleteUser,onAuthStateChanged,signInAnonymously,signOut} from 'firebase/auth';
+import {createUserWithEmailAndPassword,deleteUser,EmailAuthProvider,linkWithCredential,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'firebase/auth';
 import {collection,deleteDoc,doc,getDoc,getDocFromServer,onSnapshot,query,runTransaction,setDoc,where,writeBatch} from 'firebase/firestore';
 import {auth,db,firebaseEnabled} from './firebase';
+import {PushState,registerForPush,sendPush} from './notifications';
 import {ADMIN_CODE,HISTORY_DAYS,MAX_ADMINS} from './config';
 import {Attendance,Booking,Captain,Charity,defaults,localDay,Match,Membership,Notice,Player,Presence,Settings,validBirthDate,Vote} from './types';
 
@@ -18,6 +19,7 @@ type Ctx={
  book:(date:string)=>Promise<void>;cancelBooking:(date:string)=>Promise<void>;beCaptain:(date:string)=>Promise<void>;joinTeam:(date:string,captainId:string)=>Promise<void>;
  setAttendance:(date:string,player:Player,present:boolean)=>Promise<void>;
  saveMatch:(m:Match)=>Promise<void>;
+ notify:(title:string,body:string,kind:'chat'|'notice'|'memories'|'match'|'join'|'charity')=>void;push:PushState;chatNotify:boolean;setChatNotify:(on:boolean)=>Promise<void>;
  removeMatch:(id:string)=>Promise<void>;
  togglePresence:(date:string)=>Promise<void>;toggleVote:(date:string,targetId:string)=>Promise<void>;saveSettings:(fields:Partial<Settings>)=>Promise<void>;
  saveNotice:(title:string,body:string,id?:string)=>Promise<void>;removeNotice:(id:string)=>Promise<void>;saveCharity:(post:Charity)=>Promise<void>;removeCharity:(id:string)=>Promise<void>;
@@ -26,6 +28,11 @@ const Context=createContext<Ctx>(null as any);
 const key='airport-cricket-v1';
 const slotIds=['1','2','3'];
 const same=(a:string,b:string)=>a.trim().toLocaleLowerCase()===b.trim().toLocaleLowerCase();
+// One profile per name: the login identity is derived from name + date of birth, so the same
+// name always opens the same account on any phone, after any update, logout or reinstall.
+const nameKey=(n:string)=>n.trim().replace(/\s+/g,' ').toLocaleLowerCase();
+const hash=(str:string,seed:number)=>{let h1=0xdeadbeef^seed,h2=0x41c6ce57^seed;for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677)}h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);return (h2>>>0).toString(16).padStart(8,'0')+(h1>>>0).toString(16).padStart(8,'0')};
+const credentials=(name:string,dob:string)=>{const k=nameKey(name);return {email:`p${hash(k,1)}${hash(k,7)}@airportcricket.app`,password:`${hash(k+'|'+dob.trim(),3)}${hash(dob.trim()+'|'+k,5)}`}};
 const clean=(o:Record<string,any>)=>Object.fromEntries(Object.entries(o).filter(([,v])=>v!==undefined));
 
 export function AppProvider({children}:{children:React.ReactNode}){
@@ -81,6 +88,31 @@ export function AppProvider({children}:{children:React.ReactNode}){
  const user=useMemo<Player|null>(()=>profile&&adminAuthorized?{...profile,isAdmin:true,approvalStatus:'approved'}:profile,[profile,adminAuthorized]);
  const view=useMemo<Store>(()=>({...data,players:data.players.map(p=>adminUids.has(p.id)?{...p,isAdmin:true,approvalStatus:'approved' as const}:p)}),[data,adminUids]);
 
+ // ---- push notifications (free: Expo push service -> Google FCM) ----
+ const [push,setPush]=useState<PushState>({status:'unknown',message:'',token:''});
+ const tokensRef=useRef<{uid:string;token:string;chat:boolean}[]>([]);
+ useEffect(()=>{
+  if(!firebaseEnabled||!db||!profile)return;
+  let off=false;
+  registerForPush().then(async st=>{
+   if(off)return;setPush(st);
+   if(st.status==='on'&&auth?.currentUser)setDoc(doc(db!,'push_tokens',profile.id),{token:st.token,name:profile.name,updatedAt:Date.now()},{merge:true}).catch(()=>{});
+  });
+  const unsub=onSnapshot(collection(db,'push_tokens'),snap=>{tokensRef.current=snap.docs.map(d=>({uid:d.id,token:(d.data() as any).token,chat:(d.data() as any).chat!==false}))},()=>{});
+  return()=>{off=true;unsub()};
+ },[profile?.id]);
+ const chatNotify=tokensRef.current.find(t=>t.uid===profile?.id)?.chat!==false;
+ const [,bump]=useState(0);
+ const setChatNotify=async(on:boolean)=>{try{const u=needUser();if(db)await setDoc(doc(db,'push_tokens',u.id),{chat:on,updatedAt:Date.now()},{merge:true});tokensRef.current=tokensRef.current.map(t=>t.uid===u.id?{...t,chat:on}:t);bump(n=>n+1)}catch(e){fail(e)}};
+ // Tell the other players (or only admins for join requests). Never blocks or throws.
+ const notify=(title:string,body:string,kind:'chat'|'notice'|'memories'|'match'|'join'|'charity')=>{
+  try{
+   if(!db||!profile)return;
+   const targets=tokensRef.current.filter(t=>t.uid!==profile.id&&(kind!=='chat'||t.chat)&&(kind!=='join'||adminUids.has(t.uid)));
+   if(targets.length)sendPush(targets.map(t=>t.token),title,body,{kind});
+  }catch{}
+ };
+
  const needUser=()=>{if(!user)throw new Error('Create an account or sign in to continue.');return user};
  const requireAdmin=()=>{const u=needUser();if(!adminAuthorized)throw new Error('Admin access is required.');return u};
  const requireApproved=()=>{const u=needUser();if(u.approvalStatus==='pending')throw new Error('Your player application is awaiting admin approval.');return u};
@@ -90,12 +122,35 @@ export function AppProvider({children}:{children:React.ReactNode}){
  // ---- account / profile ----
  const join=async(name:string,dateOfBirth:string,role:Player['role'])=>{try{
   if(!name.trim()||!validBirthDate(dateOfBirth))throw Error('Enter your full name and a valid date of birth (YYYY-MM-DD).');
-  const id=auth?(auth.currentUser||(await signInAnonymously(auth)).user).uid:'u_'+Date.now();
-  const existing=db?(await getDoc(doc(db,'users',id))).data():undefined;
-  const player:Player={...existing,id,name:name.trim(),dateOfBirth,role,isAdmin:false,approvalStatus:existing?.approvalStatus||(existing?'approved':'pending')};
-  if(db)await setDoc(doc(db,'users',id),player);else setData(p=>({...p,players:[...p.players.filter(x=>x.id!==id),player]}));
-  setProfile(player);setPausedProfile(null);setGuest(false);
+  let id:string,joinedNow=false;
+  if(auth){
+   const {email,password}=credentials(name,dateOfBirth);
+   try{id=(await signInWithEmailAndPassword(auth,email,password)).user.uid}
+   catch(e1:any){
+    if(e1?.code==='auth/network-request-failed')throw Error('No internet connection. Please try again.');
+    if(e1?.code==='auth/operation-not-allowed')throw Error('Email sign-in is not switched on in Firebase yet (Authentication > Sign-in method > Email/Password).');
+    try{id=(await createUserWithEmailAndPassword(auth,email,password)).user.uid}
+    catch(e2:any){
+     if(e2?.code==='auth/email-already-in-use')throw Error(`A player named “${name.trim()}” already exists. Enter the same date of birth you used when you first joined to open that profile.`);
+     if(e2?.code==='auth/network-request-failed')throw Error('No internet connection. Please try again.');
+     throw e2;
+    }
+   }
+  }else id='u_'+nameKey(name).replace(/\W+/g,'_');
+  const existing=db?(await getDoc(doc(db,'users',id))).data() as Player|undefined:data.players.find(p=>p.id===id);
+  const player:Player=existing?.dateOfBirth?existing:{...existing,id,name:name.trim(),dateOfBirth,role,isAdmin:false,approvalStatus:existing?.approvalStatus||'pending'} as Player;
+  if(!existing?.dateOfBirth){if(db)await setDoc(doc(db,'users',id),player);else setData(p=>({...p,players:[...p.players.filter(x=>x.id!==id),player]}));joinedNow=true}
+  hadProfileRef.current=true;setProfile(player);setPausedProfile(null);setGuest(false);
+  if(joinedNow&&db)setTimeout(()=>sendPush(tokensRef.current.filter(t=>adminUids.has(t.uid)).map(t=>t.token),'🙋 New joining request',`${player.name} wants to join the team`,{kind:'join'}),4000);
  }catch(e){fail(e)}};
+ // Older installs signed in anonymously: link them to the permanent name+birthday login so that
+ // their existing profile (and admin seat) keeps working after a reinstall or logout.
+ useEffect(()=>{
+  const a=auth?.currentUser;
+  if(!a||!a.isAnonymous||!profile?.dateOfBirth||a.uid!==profile.id)return;
+  const {email,password}=credentials(profile.name,profile.dateOfBirth);
+  linkWithCredential(a,EmailAuthProvider.credential(email,password)).catch(()=>{});
+ },[profile?.id]);
  const pause=()=>{if(profile){pausedRef.current=true;setPausedProfile(profile);setProfile(null);setGuest(false)}};
  const resume=async(name:string)=>{try{
   if(!pausedProfile||!same(name,pausedProfile.name))throw Error('That name does not match this device’s saved profile.');
@@ -141,6 +196,7 @@ export function AppProvider({children}:{children:React.ReactNode}){
   await Promise.all([...loose.values()].map(([path,id])=>deleteDoc(doc(fdb,path,id)).catch(()=>{})));
   const slot=data.adminSlots.find(s=>s.uid===uid);
   if(slot){const batch=writeBatch(fdb);batch.delete(doc(fdb,'admin_slots',slot.id));batch.delete(doc(fdb,'admins',uid));await batch.commit()}
+  await deleteDoc(doc(fdb,'push_tokens',uid)).catch(()=>{});
   await deleteDoc(doc(fdb,'users',uid));
  };
  const purgeLocal=(id:string)=>{const ownedCaptains=data.captains.filter(c=>c.userId===id).map(c=>c.id);setData(p=>({...p,players:p.players.filter(x=>x.id!==id),adminSlots:p.adminSlots.filter(x=>x.uid!==id),bookings:p.bookings.filter(x=>x.userId!==id),captains:p.captains.filter(x=>x.userId!==id),memberships:p.memberships.filter(x=>x.userId!==id&&!ownedCaptains.includes(x.captainId)),presences:p.presences.filter(x=>x.userId!==id),votes:p.votes.filter(x=>x.userId!==id&&x.targetId!==id)}))};
@@ -167,21 +223,22 @@ export function AppProvider({children}:{children:React.ReactNode}){
   if(password!==ADMIN_CODE)throw Error('Incorrect admin password.');
   const mine=data.adminSlots.find(s=>s.uid===u.id);
   const free=slotIds.find(n=>!data.adminSlots.some(s=>s.id===n));
+  // Same admin name already holds a seat from an older login on this account: move the seat here.
+  const oldSeat=mine?undefined:data.adminSlots.find(s=>same(s.name,u.name));
   if(!mine){
-   if(data.adminSlots.some(s=>same(s.name,u.name)))throw Error('This admin name is already registered.');
-   if(data.adminSlots.length>=MAX_ADMINS||!free)throw Error('All three admin seats are already taken.');
+   if(!oldSeat&&(data.adminSlots.length>=MAX_ADMINS||!free))throw Error('All three admin seats are already taken.');
   }
   if(db){
    if(!mine){
     await setDoc(doc(db,'admin_enroll',u.id),{code:password,at:Date.now()}); // server rules check the password here
-    try{await setDoc(doc(db,'admin_slots',free!),{uid:u.id,name:u.name})}
+    try{await setDoc(doc(db,'admin_slots',oldSeat?oldSeat.id:free!),{uid:u.id,name:oldSeat?oldSeat.name:u.name})}
     catch{await deleteDoc(doc(db,'admin_enroll',u.id)).catch(()=>{});throw Error('Could not take an admin seat. Someone may have just taken it — please try again.')}
    }
    const marker=await getDoc(doc(db,'admins',u.id));
    if(!marker.exists())await setDoc(doc(db,'admins',u.id),{at:Date.now()});
    deleteDoc(doc(db,'admin_enroll',u.id)).catch(()=>{});
   }else if(!mine){
-   setData(p=>({...p,adminSlots:[...p.adminSlots,{id:free!,uid:u.id,name:u.name}]}));
+   setData(p=>({...p,adminSlots:oldSeat?p.adminSlots.map(x=>x.id===oldSeat.id?{...x,uid:u.id}:x):[...p.adminSlots,{id:free!,uid:u.id,name:u.name}]}));
   }
  }catch(e){fail(e)}};
  const approvePlayer=async(id:string)=>{try{
@@ -276,12 +333,14 @@ export function AppProvider({children}:{children:React.ReactNode}){
   if(present)await put('attendance','attendance',{id,date,userId:player.id,name:player.name,createdAt:Date.now(),markedBy:u.id});
   else await remove('attendance','attendance',id);
  }catch(e){fail(e)}};
- const saveMatch=async(m:Match)=>{try{requireAdmin();await put('matches','matches',m)}catch(e){fail(e)}};
+ const saveMatch=async(m:Match)=>{try{requireAdmin();const before=data.matches.find(x=>x.id===m.id);await put('matches','matches',m);
+  if(!before)notify('🏏 Match started',`${m.A.name} vs ${m.B.name} — follow the live score in Scores`,'match');
+  else if(before.status!=='done'&&m.status==='done'&&m.result)notify('🏆 Match finished',`${m.A.name} vs ${m.B.name}: ${m.result}`,'match')}catch(e){fail(e)}};
  const removeMatch=async(id:string)=>{try{requireAdmin();await remove('matches','matches',id)}catch(e){fail(e)}};
  const removeNotice=async(id:string)=>{try{requireAdmin();await remove('notices','notices',id)}catch(e){fail(e)}};
- const saveCharity=async(post:Charity)=>{try{requireAdmin();if(!post.title.trim()||!post.description.trim()||!post.amount||post.amount<0)throw Error('Enter a title, description and a valid amount.');await put('charities','charity_posts',post)}catch(e){fail(e)}};
+ const saveCharity=async(post:Charity)=>{try{requireAdmin();if(!post.title.trim()||!post.description.trim()||!post.amount||post.amount<0)throw Error('Enter a title, description and a valid amount.');await put('charities','charity_posts',post);if(!data.charities.some(c=>c.id===post.id))notify('❤️ New charity update',post.title.trim(),'charity')}catch(e){fail(e)}};
  const removeCharity=async(id:string)=>{try{requireAdmin();await remove('charities','charity_posts',id)}catch(e){fail(e)}};
 
- return <Context.Provider value={{ready,online:firebaseEnabled,user,adminAuthorized,guest,pausedProfile,data:view,error,clearError:()=>setError(''),resume,pause,join,logout,recheckProfile,deleteProfile,enterGuest:()=>setGuest(true),showAuth:()=>setGuest(false),updateProfile,approvePlayer,adminLogin,deletePlayer,book,cancelBooking,beCaptain,joinTeam,setAttendance,saveMatch,removeMatch,togglePresence,toggleVote,saveSettings,saveNotice,removeNotice,saveCharity,removeCharity}}>{children}</Context.Provider>;
+ return <Context.Provider value={{ready,online:firebaseEnabled,user,adminAuthorized,guest,pausedProfile,data:view,error,clearError:()=>setError(''),resume,pause,join,logout,recheckProfile,deleteProfile,enterGuest:()=>setGuest(true),showAuth:()=>setGuest(false),updateProfile,approvePlayer,adminLogin,deletePlayer,book,cancelBooking,beCaptain,joinTeam,setAttendance,saveMatch,removeMatch,notify,push,chatNotify,setChatNotify,togglePresence,toggleVote,saveSettings,saveNotice,removeNotice,saveCharity,removeCharity}}>{children}</Context.Provider>;
 }
 export const useApp=()=>useContext(Context);

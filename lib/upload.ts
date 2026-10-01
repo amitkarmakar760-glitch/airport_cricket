@@ -48,3 +48,20 @@ export async function pickAndUploadVideo(userId: string): Promise<string | null>
   const ext = asset.mimeType === 'video/quicktime' ? 'mov' : 'mp4';
   return uploadToCloudinary(asset.uri, 'video', `best_shot/${userId}`, asset.mimeType || 'video/mp4', `${Date.now()}.${ext}`);
 }
+
+// ---- picking one photo OR short video (used by Memories) ----
+export type Picked={uri:string;type:'image'|'video';mime:string;size?:number};
+export async function pickMedia():Promise<Picked|null>{
+  const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images','videos'],quality:0.75,allowsMultipleSelection:false});
+  if(result.canceled||!result.assets[0])return null;
+  const a=result.assets[0];
+  const video=a.type==='video';
+  if(video&&a.fileSize&&a.fileSize>25*1024*1024)throw Error('That video is larger than 25 MB. Choose a shorter or lower-resolution video.');
+  return {uri:a.uri,type:video?'video':'image',mime:a.mimeType||(video?'video/mp4':'image/jpeg'),size:a.fileSize};
+}
+export async function uploadPicked(p:Picked,folder:string):Promise<string>{
+  if(!firebaseEnabled)return p.uri;
+  if(!cloudinaryReady)throw Error('Upload is not set up in this build (Cloudinary keys missing).');
+  const ext=p.type==='video'?(p.mime==='video/quicktime'?'mov':'mp4'):'jpg';
+  return uploadToCloudinary(p.uri,p.type,folder,p.mime,`${Date.now()}.${ext}`);
+}

@@ -1,3 +1,3 @@
-export const C = { bg:'#F5F7F2', paper:'#FFFFFF', ink:'#142D23', green:'#154F39', green2:'#216849', deep:'#103A2B', mint:'#E9F4E8', lime:'#D6EF8E', red:'#D94B4B', softRed:'#FCEBEB', gray:'#74837A', line:'#E4EBE4', gold:'#F5BA5C' };
+export const C = { bg:'#FBF5EE', paper:'#FFFFFF', ink:'#2E1A0E', green:'#B4500F', green2:'#D9772B', deep:'#8C3A0A', mint:'#FDEBD9', lime:'#FFD7A3', red:'#D94B4B', softRed:'#FCEBEB', gray:'#8C7A6B', line:'#EFE3D6', gold:'#F5BA5C' };
 export const radius = { card:22, pill:99 };
-export const shadow = { shadowColor:'#173B29', shadowOpacity:0.07, shadowRadius:16, shadowOffset:{width:0,height:7}, elevation:3 };
+export const shadow = { shadowColor:'#5A2A0B', shadowOpacity:0.07, shadowRadius:16, shadowOffset:{width:0,height:7}, elevation:3 };

@@ -26,3 +26,6 @@ export type Wicket = {p:string; k:'bowled'|'caught'|'lbw'|'runout'|'stumped'|'hi
 export type Ball = {bat:string; non:string; bw:string; r:number; x?:'wd'|'nb'|'b'|'lb'; xr?:number; w?:Wicket};
 export type Innings = {bat:'A'|'B'; balls:Ball[]; done:boolean};
 export type Match = {id:string; date:string; createdAt:number; createdBy:string; title:string; overs:number; A:MTeam; B:MTeam; innings:Innings[]; status:'live'|'done'; result:string};
+
+// ---------- memories ----------
+export type Memory = {id:string; userId:string; name:string; title:string; description:string; date:string; mediaUrl:string; mediaType:'image'|'video'|'none'; createdAt:number};
